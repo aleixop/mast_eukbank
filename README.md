@@ -17,7 +17,24 @@ Download all scripts and data by using:
 git clone https://github.com/aleixop/mast_eukbank.git
 ```
 
-### 2. Run the code
+### 2. Install R packges
+
+The following packages are needed:
+
+```
+Biostrings
+ComplexHeatmap
+ggtext
+ggtree
+patchwork
+phytools
+speedyseq
+tidyverse
+treeio
+viridis
+```
+
+### 3. Run the code
 
 Open the R scripts (`.Rmd`) and run the code.
 
