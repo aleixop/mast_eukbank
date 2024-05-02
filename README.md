@@ -21,4 +21,4 @@ git clone https://github.com/aleixop/mast_eukbank.git
 
 Open the R scripts (`.Rmd`) and run the code.
 
-## Scripts and data explained
+## Data and code explained
