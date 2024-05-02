@@ -22,3 +22,24 @@ git clone https://github.com/aleixop/mast_eukbank.git
 Open the R scripts (`.Rmd`) and run the code.
 
 ## Data and code explained
+
+### Code
+
+Code is divided into three parts, which create the following objects:
+
+    - `1-overall_analysis.Rmd`: Figure 2, Table S1, Figure S7
+    - `2-mast_analysis.Rmd`: Rest of figures and tables (except Figure 1)
+    - `3-mast_trees.Rmd`: Figure S1
+
+Additionaly, `aux_functions.R` loads packages and functions needed for the scripts above to work.
+
+### Data
+
+Data is divided into the following directories:
+
+    - [`data/aux_files/`](data/aux_files/): output of analyses that take long to run (code is also available inside the R scripts, commented) and auxiliary data.
+    - `data/phyloseq/`: phyloseq objects for all Stramenopiles ASVs and non-ochrophyta ASVs in EukBank.
+    - `data/trees/`: trees, fasta files and alignments for references trees alone and references trees with ASVs.
+    * `data/trees/mast/`: files for separated trees per clade (with and without ASVs), used for Figure S1.
+    * `data/trees/stramenopiles/`: reference trees of Stramenopiles. Tree in Figure 1 is located in `data/trees/stramenopiles/main/`. Tree used for phylogenetic placement 
+    - `data/vegan/`: NMDS analysis data used for Figure 2.
