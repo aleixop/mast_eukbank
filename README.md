@@ -1,9 +1,9 @@
-# How marine are MAST (Marine Stramenopiles)? A cross-system evaluation 
+# How marine are Marine Stramenopiles (MAST)? A cross-system evaluation 
 
 This repository contains code and data included in:
 
 --------
-Obiol, A., del Campo, J., de Vargas, C., Mahé, F., and Massana R. How marine are MAST (Marine Stramenopiles)? A cross-system evaluation 
+Obiol, A., del Campo, J., de Vargas, C., Mahé, F., and Massana R. How marine are Marine Stramenopiles (MAST)? A cross-system evaluation 
 
 --------
 
