@@ -1,0 +1,837 @@
+---
+title: "EukBank MAST analysis"
+author: "Aleix Obiol"
+date: "02/02/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("aux_functions.R")
+# library(ggfortify)
+```
+
+## Read phyloseq objects and other data
+
+```{r}
+physeq_nonochrophyta <-
+  readRDS("data/phyloseq/physeq_nonochrophyta.rds")
+
+asvs_summary <-
+  readRDS("data/aux_files/summary_asvs_and_envplot.rds")
+
+asvs_summary_marinecontinental <-
+  readRDS("data/aux_files/summary_asvs_and_envplot_marine-continental.rds")
+
+asvs_summary_marinecontinental_zeros <-
+  readRDS("data/aux_files/summary_asvs_and_envplot_marine-continental_withzeros.rds")
+
+asvs_summary_zeros <-
+  readRDS('data/aux_files/summary_asvs_and_envplot_withzeros.rds')
+
+eukbank_asvs <-
+  read_tsv("data/aux_files/eukbank_18S_V4_asvs.tsv.gz")
+```
+
+## Create MAST phyloseq object
+
+```{r}
+mast_physeq <-
+  physeq_nonochrophyta %>%
+  counts_to_percent(total_col = "nreads") %>%
+  subset_taxa(str_detect(taxogroup2, "MAST")) %>%
+  remove_empty_taxa()
+
+metadata <-
+  sample_data(mast_physeq) %>%
+  as_tibble()
+
+masts_counts_df <-
+  mast_physeq %>%
+  tax_glom_custom("taxogroup2") %>%
+  otu_table() %>%
+  as_tibble() %>%
+  left_join(metadata) %>%
+  left_join(tax_table(mast_physeq) %>% as_tibble()) %>%
+  select(-.otu, -taxogroup3) %>%
+  factor_envplot()
+
+min_perc <-
+  masts_counts_df %>%
+  arrange(.abundance) %>%
+  filter(.abundance > 0) %>%
+  pull(.abundance) %>%
+  head(n = 1)
+
+order_masts <-
+  masts_counts_df %>%
+  select(taxogroup2) %>%
+  unique() %>%
+  separate(taxogroup2, into = c("mast", "num"), remove = F) %>%
+  mutate(num = if_else(taxogroup2 == "InSedMAST", 29, as.numeric(num))) %>%
+  arrange(num) %>%
+  pull(taxogroup2)
+
+groups_with_tax3 <-
+  tax_table(mast_physeq) %>%
+  as_tibble() %>%
+  group_by(taxogroup2) %>%
+  filter(sum(is.na(taxogroup3)) != n()) %>% # take groups that have some tax3 defined
+  select(taxogroup2) %>%
+  unique()
+
+order_all_masts <-
+  asvs_summary %>%
+  filter(amplicon %in% taxa_names(mast_physeq)) %>%
+  ungroup() %>%
+  select(taxogroup2, taxogroup3) %>%
+  unique() %>%
+  filter(!(is.na(taxogroup3) & taxogroup2 %in% groups_with_tax3$taxogroup2)) %>%
+  mutate(
+    num = as.integer(str_remove(str_remove(taxogroup2, "MAST-"), "[A-Z].*")),
+    num = if_else(taxogroup2 == "InSedMAST", 30, num),
+    letter = str_match(taxogroup3, "MAST-[0-9]+(.*)")[, 2],
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3)
+  ) %>%
+  arrange(num, letter) %>%
+  pull(tax)
+```
+
+## Figure 3
+
+```{r}
+fig3 <-
+  masts_counts_df %>%
+  mutate(taxogroup2 = factor(taxogroup2, levels = order_masts)) %>%
+  ggplot(aes(x = envplot, y = .abundance + min_perc)) +
+  geom_jitter(aes(color = envplot), width = 0.2, height = 0, alpha = 0.4) +
+  geom_boxplot(aes(fill = envplot), alpha = 0.5, outlier.shape = NA) +
+  scale_color_manual(
+    values = envplot_colors,
+    guide = guide_legend(nrow = 1),
+    name = "",
+    labels = c("Marine water", "Marine sediment", "Freshwater", "Freshwater sediment", "Soil")
+  ) +
+  scale_fill_manual(
+    values = envplot_colors,
+    guide = guide_legend(override.aes = list(alpha = 1), nrow = 1),
+    name = "",
+    labels = c("Marine water", "Marine sediment", "Freshwater", "Freshwater sediment", "Soil")
+  ) +
+  facet_wrap(~taxogroup2, nrow = 6) +
+  theme(
+    axis.text.x = element_blank(),
+    legend.position = "top"
+  ) +
+  scale_y_log10(labels = scales::label_number(drop0trailing = T)) +
+  labs(
+    x = "",
+    y = "Relative read abundance (%)"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "gray95", color = NA),
+    strip.background = element_rect(fill = "gray85", color = NA)
+  )
+
+ggsave("figure3.pdf", height = 9, width = 8)
+```
+
+## Table 1
+
+```{r}
+envplot_preference <-
+  asvs_summary_zeros %>%
+  filter(
+    amplicon %in% taxa_names(mast_physeq),
+    !(is.na(taxogroup3) & taxogroup2 %in% groups_with_tax3$taxogroup2)
+  ) %>%
+  mutate(
+    name = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    name = factor(name, levels = order_all_masts)
+  ) %>%
+  group_by(name, envplot) %>%
+  summarise(mean_abun = mean(mean_abun)) %>%
+  slice_max(n = 1, order_by = mean_abun) %>%
+  mutate(`main habitat` = stringr::str_to_sentence(str_replace(envplot, "_", " "))) %>%
+  select(-envplot)
+
+table1 <-
+  asvs_summary %>%
+  select(amplicon, contains("taxogroup")) |>
+  unique() |>
+  filter(
+    amplicon %in% taxa_names(mast_physeq),
+    !(is.na(taxogroup3) & taxogroup2 %in% groups_with_tax3$taxogroup2)
+  ) %>%
+  mutate(
+    name = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    name = factor(name, levels = order_all_masts),
+    taxogroup3 = if_else(is.na(taxogroup3), "-", taxogroup3),
+    taxogroup1 = if_else(taxogroup2 %in% c("MAST-25", "MAST-27", "InSedMAST"), "-", taxogroup1),
+    taxogroup1 = factor(taxogroup1, levels = c("Pseudofungi", "Opalozoa", "Sagenista", "-"))
+  ) %>%
+  group_by(name, taxogroup1, taxogroup2, taxogroup3) %>%
+  summarise(n_asvs = n()) %>%
+  arrange(taxogroup1, name) %>%
+  left_join(envplot_preference) %>%
+  ungroup() %>%
+  select(-name, -mean_abun)
+
+write_tsv(table1, "table1.tsv")
+```
+
+## Figure S2
+
+```{r}
+masts_subclades_counts_df <-
+  mast_physeq %>%
+  tax_glom_custom("taxogroup3") %>%
+  subset_taxa(!is.na(taxogroup3)) %>%
+  otu_table() %>%
+  as_tibble() %>%
+  left_join(metadata) %>%
+  left_join(tax_table(mast_physeq) %>% as_tibble()) %>%
+  select(-.otu, -c(supergroup, taxogroup1, taxogroup2)) %>%
+  factor_envplot()
+
+order_masts_subclades <-
+  masts_subclades_counts_df %>%
+  select(taxogroup3) %>%
+  unique() %>%
+  mutate(
+    num = as.integer(str_remove(str_remove(taxogroup3, "MAST-"), "[A-Z].*")),
+    letter = str_match(taxogroup3, "MAST-[0-9]+(.*)")[, 2],
+    mast = str_remove(taxogroup3, "-.*")
+  ) %>%
+  arrange(mast, num, letter) %>%
+  pull(taxogroup3)
+
+figS2 <-
+  masts_subclades_counts_df %>%
+  mutate(taxogroup3 = factor(taxogroup3, levels = order_masts_subclades)) %>%
+  ggplot(aes(x = envplot, y = .abundance + min_perc)) +
+  geom_jitter(aes(color = envplot), width = 0.2, height = 0, alpha = 0.5) +
+  geom_boxplot(aes(fill = envplot), alpha = 0.5, outlier.shape = NA) +
+  scale_color_manual(
+    values = envplot_colors,
+    guide = guide_legend(nrow = 1),
+    name = "",
+    labels = c("Marine water", "Marine sediment", "Freshwater", "Freshwater sediment", "Soil")
+  ) +
+  scale_fill_manual(
+    values = envplot_colors,
+    guide = guide_legend(override.aes = list(alpha = 1), nrow = 1),
+    name = "",
+    labels = c("Marine water", "Marine sediment", "Freshwater", "Freshwater sediment", "Soil")
+  ) +
+  scale_y_log10(labels = scales::label_number(drop0trailing = T)) +
+  facet_wrap(~taxogroup3, ncol = 6) +
+  theme(
+    axis.text.x = element_blank(),
+    legend.position = "bottom",
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    panel.background = element_rect(fill = "gray95", color = NA),
+    strip.background = element_rect(fill = "gray85", color = NA)
+  ) +
+  labs(
+    x = "",
+    y = "Relative read abundance (%)"
+  )
+
+ggsave("figS2.pdf", height = 22.5, width = 18)
+```
+
+## Figure S3
+
+```{r}
+figS3 <-
+  masts_counts_df %>%
+  filter(fraction %in% c("pico", "nano")) %>%
+  mutate(fraction = factor(fraction, levels = c("pico", "nano"))) %>%
+  mutate(taxogroup2 = factor(taxogroup2, levels = order_masts)) %>%
+  ggplot(aes(x = envplot, y = .abundance + min_perc)) +
+  geom_jitter(aes(color = envplot), width = 0.2, height = 0, alpha = 0.4) +
+  geom_boxplot(aes(fill = envplot), alpha = 0.5, outlier.shape = NA) +
+  scale_color_manual(
+    values = envplot_colors,
+    guide = guide_legend(nrow = 1),
+    name = "",
+    labels = c(marine_water = "Marine water", freshwater = "Freshwater")
+  ) +
+  scale_fill_manual(
+    values = envplot_colors,
+    guide = guide_legend(override.aes = list(alpha = 1), nrow = 1),
+    name = "",
+    labels = c(marine_water = "Marine water", freshwater = "Freshwater")
+  ) +
+  ggh4x::facet_nested_wrap(~ taxogroup2 + fraction, nrow = 5) +
+  theme(
+    axis.text.x = element_blank(),
+    legend.position = "bottom",
+    panel.background = element_rect(fill = "gray95", color = NA),
+    strip.background = element_rect(fill = "gray85", color = NA)
+  ) +
+  scale_y_log10(labels = scales::label_number(drop0trailing = T)) +
+  labs(
+    x = "",
+    y = "Relative read abundance (%)"
+  )
+
+ggsave("figS3.pdf", height = 10, width = 10)
+```
+
+## Figure S4
+
+```{r}
+asvs_marine_vs_continental <-
+  asvs_summary %>%
+  filter(
+    amplicon %in% taxa_names(mast_physeq),
+    !(is.na(taxogroup3) & taxogroup2 %in% groups_with_tax3$taxogroup2)
+  ) %>%
+  ungroup() %>%
+  mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) %>%
+  select(envplot, amplicon, taxogroup2, taxogroup3) %>%
+  unique() %>%
+  group_by(amplicon, taxogroup2, taxogroup3) %>%
+  reframe(type = case_when(
+    n() > 1 ~ "shared",
+    TRUE ~ envplot
+  )) %>%
+  unique()
+
+summary_asvs_marine_vs_continental <-
+  asvs_marine_vs_continental %>%
+  mutate(
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    tax = factor(tax, levels = order_all_masts)
+  ) %>%
+  group_by(tax, type) %>%
+  tally() %>%
+  mutate(
+    perc_n = 100 * n / sum(n),
+    type = factor(type, levels = c("marine", "continental", "shared"))
+  )
+
+asvs_diff_envplots <-
+  asvs_summary_zeros %>%
+  filter(nsamples > 0) %>%
+  mutate(
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    tax = factor(tax, levels = order_all_masts)
+  ) %>%
+  filter(tax %in% summary_asvs_marine_vs_continental$tax) %>%
+  left_join(asvs_marine_vs_continental) %>%
+  select(-nsamples, -total_samples) %>%
+  mutate(color_points = if_else(type == "shared", type, envplot)) %>%
+  pivot_longer(c(occ_perc, mean_abun))
+
+p_shared_asvs_list <-
+  asvs_diff_envplots %>%
+  pull(tax) %>%
+  unique() %>%
+  sort() %>%
+  purrr::map(~ shared_asvs_plotter(.x))
+
+pdf("figS4.pdf", height = 6, width = 6)
+for (i in 1:length(p_shared_asvs_list)) {
+  print(p_shared_asvs_list[[i]])
+}
+dev.off()
+```
+
+## Figure 4
+
+### A
+
+```{r}
+p_asvs_marine_vs_continental <-
+  summary_asvs_marine_vs_continental %>%
+  ggplot(aes(x = perc_n, y = fct_rev(tax))) +
+  geom_col(aes(fill = fct_rev(type))) +
+  scale_fill_manual(
+    values = c(
+      marine = "#008080",
+      continental = "chocolate1",
+      shared = "tan"
+    ),
+    guide = guide_legend(reverse = T),
+    name = NULL
+  ) +
+  labs(
+    y = NULL,
+    x = ""
+  ) +
+  scale_x_continuous(labels = ~ paste0(.x, "%"))
+theme(legend.position = "top")
+
+shared_asvs_abun_marinecontinental <-
+  asvs_marine_vs_continental %>%
+  mutate(
+    type = factor(type, c("marine", "continental", "shared")),
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    tax = factor(tax, levels = order_all_masts)
+  ) %>%
+  filter(type == "shared") %>%
+  left_join(asvs_summary_marinecontinental_zeros) %>%
+  group_by(tax, envplot) %>%
+  summarise(mean_abun = mean(mean_abun)) %>%
+  mutate(perc = 100 * mean_abun / sum(mean_abun))
+
+p_col_shared_marinecontinental <-
+  shared_asvs_abun_marinecontinental %>%
+  ggplot(aes(y = fct_rev(tax), x = perc)) +
+  geom_col(aes(fill = fct_rev(envplot))) +
+  geom_col(
+    data = shared_asvs_abun_marinecontinental %>%
+      select(tax) %>%
+      unique() %>%
+      mutate(perc = 100),
+    color = "tan",
+    fill = NA
+  ) +
+  scale_fill_manual(
+    values = c(
+      marine = "#008080",
+      continental = "chocolate1"
+    ),
+    guide = "none",
+    name = NULL
+  ) +
+  labs(x = "", y = "", subtitle = "Rel. abun. of\nshared ASVs (%)") +
+  theme(
+    axis.text.y = element_blank(),
+    plot.subtitle = element_text(size = 10)
+  ) +
+  scale_y_discrete(drop = F) +
+  scale_x_continuous(breaks = c(0, 50, 100), labels = paste0(c(0, 50, 100), "%"))
+
+p_marinecontinenal_merged <-
+  (p_asvs_marine_vs_continental +
+    labs(
+      title = "(A) Marine vs continental",
+      subtitle = " Number of ASVs (%)"
+    ) +
+    theme(
+      plot.subtitle = element_text(size = 10),
+      axis.text = element_text(size = 8)
+    )) +
+    plot_spacer() +
+    p_col_shared_marinecontinental +
+    plot_layout(guides = "collect", widths = c(7, -1.3, 3)) & theme(legend.position = "bottom")
+```
+
+### B
+
+```{r}
+asvs_water_vs_sediment <-
+  asvs_summary %>%
+  filter(
+    amplicon %in% taxa_names(mast_physeq),
+    !(is.na(taxogroup3) & taxogroup2 %in% groups_with_tax3$taxogroup2),
+    str_detect(envplot, "marine")
+  ) %>%
+  mutate(envplot = str_remove(envplot, ".*_")) %>%
+  group_by(amplicon, taxogroup2, taxogroup3) %>%
+  reframe(type = case_when(
+    n() > 1 ~ "shared",
+    TRUE ~ envplot
+  )) %>%
+  unique()
+
+summary_asvs_water_vs_sediment <-
+  asvs_water_vs_sediment %>%
+  mutate(
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    tax = factor(tax, levels = order_all_masts)
+  ) %>%
+  group_by(tax, type) %>%
+  tally() %>%
+  mutate(
+    perc_n = 100 * n / sum(n),
+    type = factor(type, levels = c("water", "sediment", "shared"))
+  )
+
+p_asvs_water_vs_sediment <-
+  summary_asvs_water_vs_sediment %>%
+  ggplot(aes(x = perc_n, y = fct_rev(tax))) +
+  geom_col(aes(fill = fct_rev(type))) +
+  scale_y_discrete(drop = FALSE) +
+  scale_fill_manual(
+    values = c(
+      water = "royalblue3",
+      sediment = "#00A04B",
+      shared = "tan"
+    ),
+    guide = guide_legend(reverse = T),
+    name = NULL
+  ) +
+  labs(
+    y = NULL,
+    x = ""
+  ) +
+  scale_x_continuous(labels = ~ paste0(.x, "%")) +
+  theme(legend.position = "bottom")
+
+shared_asvs_abun_watersediment <-
+  asvs_water_vs_sediment %>%
+  filter(type == "shared") %>%
+  left_join(asvs_summary_zeros %>%
+    filter(str_detect(envplot, "marine")) %>%
+    mutate(envplot = str_remove(envplot, "marine_"))) %>%
+  mutate(
+    type = factor(type, c("water", "sediment", "shared")),
+    tax = if_else(is.na(taxogroup3), taxogroup2, taxogroup3),
+    tax = factor(tax, levels = order_all_masts)
+  ) %>%
+  group_by(tax, envplot) %>%
+  summarise(mean_abun = mean(mean_abun)) %>%
+  mutate(perc = 100 * mean_abun / sum(mean_abun))
+
+p_col_shared_watersediment <-
+  shared_asvs_abun_watersediment %>%
+  ggplot(aes(y = fct_rev(tax), x = perc)) +
+  geom_col(aes(fill = envplot)) +
+  geom_col(
+    data = shared_asvs_abun_watersediment %>%
+      select(tax) %>%
+      unique() %>%
+      mutate(perc = 100),
+    color = "tan",
+    fill = NA
+  ) +
+  scale_fill_manual(
+    values = c(
+      water = "royalblue3",
+      sediment = "#00A04B",
+      shared = "tan"
+    ),
+    guide = "none",
+    name = NULL
+  ) +
+  labs(x = "", y = "", subtitle = "Rel. abun. of\nshared ASVs (%)") +
+  theme(
+    axis.text.y = element_blank(),
+    plot.subtitle = element_text(size = 10)
+  ) +
+  scale_y_discrete(drop = F) +
+  scale_x_continuous(breaks = c(0, 50, 100), labels = paste0(c(0, 50, 100), "%"))
+
+p_watersediment_merged <-
+  (p_asvs_water_vs_sediment +
+    labs(
+      title = "(B) Marine water vs sediment",
+      subtitle = " Number of ASVs (%)"
+    ) +
+    theme(plot.subtitle = element_text(size = 10))) +
+    plot_spacer() +
+    p_col_shared_watersediment +
+    plot_layout(guides = "collect", widths = c(7, -1.3, 3)) & theme(legend.position = "bottom")
+```
+### All
+
+```{r}
+fig4 <-
+  (p_marinecontinenal_merged | (p_watersediment_merged & theme(axis.text.y = element_blank()))) &
+    theme(
+      axis.text.x = element_text(size = 8),
+      panel.background = element_rect(fill = "gray95", color = NA)
+    )
+
+ggsave("figure4.pdf", height = 11, width = 8.2)
+```
+
+## Figure S5
+
+```{r}
+shared_asvs <-
+  asvs_marine_vs_continental |>
+  filter(type == "shared") |>
+  pull(amplicon)
+
+non_marine_groups <-
+  c("MAST-12C", "MAST-12H", "MAST-2A")
+
+occ_shared_marine_asvs <-
+  asvs_summary |>
+  filter(
+    amplicon %in% shared_asvs,
+    !taxogroup3 %in% c(non_marine_groups) | is.na(taxogroup3),
+    !str_detect(envplot, "marine")
+  ) |>
+  group_by(amplicon) |>
+  summarise(
+    nsamples = sum(nsamples),
+    total_samples = sum(total_samples)
+  )
+
+figS5 <-
+  occ_shared_marine_asvs |>
+  ggplot(aes(x = nsamples)) +
+  geom_histogram(binwidth = 1, fill = "chocolate1") +
+  labs(
+    x = "Occurrence (number of samples)",
+    y = "Number of ASVs"
+  ) +
+  theme_bw()
+
+ggsave("figS5.pdf", height = 4, width = 7)
+```
+
+## Figure S6
+
+```{r}
+shared_asvs_df <-
+  mast_physeq |>
+  prune_taxa(taxa = occ_shared_marine_asvs$amplicon) |>
+  remove_empty_samples() |>
+  subset_samples(!str_detect(envplot, "marine")) |>
+  psmelt() |>
+  as_tibble() |>
+  filter(Abundance > 0) |>
+  mutate(name = paste(OTU, taxogroup2, taxogroup3, sep = "_")) |>
+  group_by(OTU)
+
+asvs_shared_5samples <-
+  shared_asvs_df |>
+  filter(!str_detect(envplot, "marine")) |>
+  filter(n() >= 5) |>
+  pull(OTU) |>
+  unique()
+
+world_data <- map_data("world")
+
+world_map <-
+  ggplot() +
+  geom_polygon(
+    data = world_data,
+    mapping = aes(x = long, y = lat, group = group),
+    fill = "gray75", color = "gray75", linewidth = 0.3
+  ) +
+  coord_fixed(1.3, xlim = c(-170, 175)) +
+  labs(
+    y = "Latitude (º)",
+    x = "Longitude (º)"
+  ) +
+  theme_minimal()
+
+figS6 <-
+  world_map +
+  geom_point(
+    data = shared_asvs_df %>%
+      factor_envplot() |>
+      filter(OTU %in% asvs_shared_5samples),
+    aes(
+      x = longitude,
+      y = latitude,
+      color = envplot
+    )
+  ) +
+  scale_color_manual(
+    values = envplot_colors,
+    guide = guide_legend(nrow = 1, override.aes = list(size = 3, alpha = 1)),
+    name = "",
+    labels = c("Freshwater", "Freshwater sediment", "Soil")
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 12)
+  ) +
+  guides(color = guide_legend(title = "", nrow = 1, override.aes = list(size = 4, alpha = 1))) +
+  theme(
+    panel.background = element_rect(fill = "gray95", color = NA),
+    strip.text = element_text(size = 7)
+  ) +
+  facet_wrap(~name)
+
+ggsave("figS6.pdf", height = 13, width = 15)
+```
+
+## Figure 5
+
+```{r}
+mast_counts_notimeseries <- # average counts for samples with same pair of coordinates
+  mast_physeq %>%
+  subset_samples(envplot == "marine_water") %>%
+  psmelt() %>%
+  group_by(OTU, latitude, longitude, taxogroup2, taxogroup3) %>%
+  summarise(Abundance = mean(Abundance))
+
+all_marine_asvs <-
+  mast_counts_notimeseries %>%
+  group_by(OTU, taxogroup2, taxogroup3) %>%
+  summarise(total_abun = sum(Abundance)) %>%
+  filter(total_abun > 0) %>%
+  arrange(-total_abun) %>%
+  ungroup() %>%
+  mutate(cumulative = cumsum(total_abun / sum(total_abun)))
+
+signal_explained <- .6
+
+top_marine_asvs <-
+  all_marine_asvs %>%
+  filter(lag(cumulative, default = 0) <= signal_explained) %>%
+  mutate(name = if_else(is.na(taxogroup3), taxogroup2, taxogroup3)) |>
+  left_join(eukbank_asvs |> select(OTU = 1, sequence))
+
+top_marine_asvs_df <-
+  mast_counts_notimeseries %>%
+  filter(OTU %in% top_marine_asvs$OTU)
+
+min_perc <-
+  top_marine_asvs_df %>%
+  filter(Abundance > 0) %>%
+  pull(Abundance) %>%
+  min()
+
+main_groups <- c("MAST-1", "MAST-3", "MAST-4", "MAST-7")
+
+df_for_heatmap_top <-
+  top_marine_asvs_df %>%
+  ungroup() %>%
+  mutate(interval = cut_interval(latitude, length = 1)) %>%
+  left_join(top_marine_asvs %>% mutate(name = paste0(row_number(), "/ ", name)) %>% select(OTU, name)) %>%
+  group_by(name, interval) %>%
+  summarise(Abundance = mean(Abundance)) %>%
+  pivot_wider(names_from = name, values_from = Abundance, values_fill = 0) %>%
+  arrange(desc(interval)) %>%
+  column_to_rownames("interval")
+
+ocean_regions <-
+  tibble(latitude = rownames(df_for_heatmap_top)) %>%
+  mutate(
+    high = as.integer(str_extract(latitude, "[0-9]+")),
+    `Oceanic region` = case_when(
+      high >= 67 ~ "polar",
+      high >= 24 ~ "temperate",
+      TRUE ~ "tropical"
+    )
+  ) %>%
+  select(latitude, `Oceanic region`) %>%
+  column_to_rownames("latitude")
+
+tax_groups <-
+  tibble(
+    rownames = colnames(df_for_heatmap_top),
+    # pos = str_match(rownames, '(.*)\\/')[,2],
+    group = str_remove_all(rownames, ".*/ |[A-Z]$"),
+    num = as.integer(str_remove(group, "MAST-"))
+  ) %>%
+  arrange(num) %>%
+  mutate(
+    group = if_else(group %in% main_groups, group, "Other"),
+    group = factor(group, levels = c(main_groups, "Other")),
+    rownames = factor(rownames, levels = colnames(df_for_heatmap_top))
+  ) %>%
+  select(-num) %>%
+  arrange(rownames) %>%
+  column_to_rownames("rownames")
+
+latitude_labels <-
+  tibble(latitude = rownames(df_for_heatmap_top)) %>%
+  mutate(
+    label = as.integer(str_match(latitude, ",(.*)\\]")[, 2]),
+    label = case_when(
+      label %in% c(89, 49, -73) ~ as.character(label),
+      abs(label) %% 10 == 0 ~ as.character(label),
+      TRUE ~ NA_character_
+    ),
+    index = row_number()
+  ) %>%
+  filter(!is.na(label))
+
+asv_position_labels <-
+  tibble(name = colnames(df_for_heatmap_top)) %>%
+  mutate(
+    pos = str_match(name, "(.*)\\/")[, 2],
+    name = factor(name, levels = colnames(df_for_heatmap_top))
+  ) %>%
+  column_to_rownames("name")
+
+ht <-
+  Heatmap(
+    matrix = as.matrix(log10(df_for_heatmap_top + min_perc)),
+    clustering_method_columns = "ward.D2",
+    cluster_rows = F,
+    heatmap_legend_param = list(
+      title = gt_render("log<sub>10</sub>(rel abun)"),
+      legend_direction = "vertical"
+    ),
+    col = c("gray95", viridis(option = "plasma", n = 100)),
+    show_row_names = F,
+    row_title = "Latitude (º)",
+    column_split = 4,
+    column_title = NULL,
+    border = T,
+    column_labels = str_remove(colnames(df_for_heatmap_top), ".* "),
+    right_annotation = rowAnnotation(
+      df = ocean_regions,
+      col = list(`Oceanic region` = c(
+        polar = "#197230",
+        temperate = "#5A9C50",
+        tropical = "#B2D6A3"
+      )),
+      show_annotation_name = F
+    ),
+    bottom_annotation = columnAnnotation(
+      df = tax_groups,
+      foo = anno_text(asv_position_labels$pos,
+        rot = 0,
+        just = "center",
+        gp = gpar(fontsize = 8)
+      ),
+      col = list(group = set_names(
+        c(viridis(option = "turbo", n = 4), "gray60"),
+        levels(tax_groups$group)
+      )),
+      show_annotation_name = F,
+      annotation_legend_param = list(title = "Group"),
+      gp = gpar(col = "white")
+    ),
+    left_annotation = rowAnnotation(foo = anno_mark(
+      labels = latitude_labels$label,
+      at = latitude_labels$index,
+      side = "left"
+    )),
+    column_names_rot = 45,
+    column_names_gp = gpar(fontsize = 8)
+  )
+
+pdf("figure5.pdf", height = 8, width = 11)
+draw(ht, legend_grouping = "original", padding = unit(c(0, 1, .5, 1), "cm"))
+dev.off()
+# Sadly, I reordered the legend manually in Illustrator
+```
+
+## Table S2
+
+```{r}
+top_marine_asvs_otutab <-
+  mast_physeq |>
+  subset_samples(envplot == "marine_water") |>
+  prune_taxa(taxa = top_marine_asvs$OTU) |>
+  otu_table()
+
+mean_abun_top <-
+  (rowSums(top_marine_asvs_otutab) / ncol(top_marine_asvs_otutab)) |>
+  as_tibble(rownames = "OTU") |>
+  dplyr::rename("Mean relative read abundance (%)" = value)
+
+mean_occur_top <-
+  (100 * rowSums(top_marine_asvs_otutab > 0) / ncol(top_marine_asvs_otutab)) |>
+  as_tibble(rownames = "OTU") |>
+  dplyr::rename("Occurrence (%)" = value)
+
+tableS2 <-
+  top_marine_asvs |>
+  select(-c(total_abun, cumulative, name)) |>
+  left_join(mean_abun_top) |>
+  left_join(mean_occur_top) |>
+  relocate(sequence, .after = -1) |>
+  dplyr::rename("Amplicon" = OTU)
+
+write_tsv(tableS2, "tableS2.tsv")
+```

@@ -1,0 +1,146 @@
+---
+title: "MAST trees"
+author: "Aleix Obiol"
+date: "02/02/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("aux_functions.R")
+```
+
+## Read files
+
+```{r}
+mast_physeq <- 
+  readRDS('data/phyloseq/physeq_nonochrophyta.rds') |> 
+  counts_to_percent(total_col = 'nreads') %>%
+  subset_taxa(str_detect(taxogroup2, 'MAST')) %>% 
+  remove_empty_taxa()
+
+groups_with_tax3 <- 
+  tax_table(mast_physeq) %>% 
+  as_tibble() %>% 
+  group_by(taxogroup2) %>% 
+  filter(sum(is.na(taxogroup3)) != n()) %>% # take groups that have some tax3 defined
+  select(taxogroup2) %>% 
+  unique() |> 
+  mutate(num = as.integer(str_remove(taxogroup2, '.*-'))) |> 
+  arrange(num) |> 
+  pull(taxogroup2)
+
+trees <- 
+  groups_with_tax3 |> 
+  set_names() |> 
+  purrr::map(~ read.tree(paste0('data/trees/mast/references_only/',.x,'.treefile')))
+```
+
+## Plot trees
+
+And do some editing with Illustrator. Mainly removing bootstrap values of internal nodes within a clade.
+
+### MAST-1
+
+```{r}
+p_mast1 <- plot_mast_tree('MAST-1', offset = 0.05) + 
+  ggplot2::xlim(c(0,.2))
+
+ggsave(plot = p_mast1, filename = 'A.MAST-1.pdf', height = 40, width = 10)
+```
+
+### MAST-2
+
+```{r}
+p_mast2 <- plot_mast_tree('MAST-2', offset = 0.001) + 
+  ggplot2::xlim(c(0,.3))
+
+ggsave(plot = p_mast2, filename = 'B.MAST-2.pdf', height = 10, width = 10)
+```
+
+### MAST-3
+
+```{r}
+p_mast3 <- plot_mast_tree('MAST-3', offset = 0.05) + 
+  ggplot2::xlim(c(0,.4))
+
+ggsave(plot = p_mast3, filename = 'C.MAST-3.pdf', height = 40, width = 10)
+```
+
+### MAST-4
+
+```{r}
+p_mast4 <- plot_mast_tree('MAST-4', offset = 0.05) + 
+  ggplot2::xlim(c(0,0.2))
+
+ggsave(plot = p_mast4, filename = 'D.MAST-4.pdf', height = 40, width = 10)
+```
+
+### MAST-6
+
+In this case I need to flip nodes for the outgroup to be at bottom.
+
+```{r}
+p_mast6_0 <- plot_mast_tree('MAST-6', offset = 0.05) + 
+  ggplot2::xlim(c(0,.2))
+
+# detect node numbers to flip, remove bootstraps first to see them
+p_mast6_0$layers[[4]] <- NULL
+p_mast6_0 + geom_text(aes(label = node))
+# node are 41 and 52
+
+p_mast6_1 <- 
+  plot_mast_tree('MAST-6', offset = 0.05) + 
+  ggplot2::xlim(c(0,.2))
+
+p_mast6 <- 
+  flip(p_mast6_1, node1 = 41, node2 = 52)
+
+# in illustrator, move clade labels
+ggsave(plot = p_mast6, filename = 'E.MAST-6.pdf', height = 7, width = 10)
+```
+
+### MAST-7
+
+```{r}
+p_mast7 <- plot_mast_tree('MAST-7', offset = 0.035) + 
+  ggplot2::xlim(c(0,.2))
+
+ggsave(plot = p_mast7, filename = 'F.MAST-7.pdf', height = 25, width = 10)
+```
+
+### MAST-8
+
+```{r}
+p_mast8 <- plot_mast_tree('MAST-8', offset = 0.035) + 
+  ggplot2::xlim(c(0,.2))
+
+ggsave(plot = p_mast8, filename = 'G.MAST-8.pdf', height = 10, width = 10)
+```
+
+### MAST-9
+
+```{r}
+p_mast9 <- plot_mast_tree('MAST-9', offset = 0.06) + 
+  ggplot2::xlim(c(0,.3))
+
+ggsave(plot = p_mast9, filename = 'H.MAST-9.pdf', height = 10, width = 10)
+```
+
+### MAST-12
+
+```{r}
+p_mast12 <- plot_mast_tree('MAST-12', offset = 0.07) + 
+  ggplot2::xlim(c(0,.41))
+
+ggsave(plot = p_mast12, filename = 'I.MAST-12.pdf', height = 15, width = 10)
+```
+
+### MAST-22
+
+```{r}
+p_mast22 <- plot_mast_tree('MAST-22', offset = 0.1) + 
+  ggplot2::xlim(c(0,.3))
+
+ggsave(plot = p_mast22, filename = 'J.MAST-22.pdf', height = 17, width = 10)
+```
