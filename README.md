@@ -48,4 +48,5 @@ Additionaly, all currently available MAST references (used in this study) can be
 
 ## Original data
 
-Original data used in this study can be downloaded here: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7804946.svg)](https://doi.org/10.5281/zenodo.7804946).
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7804946.svg)](https://doi.org/10.5281/zenodo.7804946).
+Original data used in this study can be downloaded by clicking the above DOI.
