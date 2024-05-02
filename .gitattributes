@@ -1,2 +1,5 @@
 *.R linguist-language=R
 *.Rmd linguist-language=R
+*.pir linguist-language=Other
+*.fasta linguist-language=Other
+*.treefile linguist-language=Other
