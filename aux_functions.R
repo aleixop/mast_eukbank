@@ -291,3 +291,18 @@ plot_mast_tree <- function(group, offset = 0.1){
   
   return(p_tree)
 }
+
+vegan_formatter <- function(df, row_names, sample_col = 'Sample', abun_col = 'Abundance', fill = 0){
+  
+  df_wide <- 
+    df %>% 
+    dplyr::select(sample_col, abun_col, row_names) %>% 
+    pivot_wider(names_from = sample_col,
+                values_from = abun_col, 
+                values_fill = fill) %>% 
+    column_to_rownames(row_names) %>% 
+    t()
+  
+  return(df_wide)
+  
+}
