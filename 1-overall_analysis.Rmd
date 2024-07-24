@@ -18,8 +18,8 @@ physeq_nonochrophyta <-
   readRDS("data/phyloseq/physeq_nonochrophyta.rds")
 
 physeq_stramenopiles <-
-  readRDS("data/phyloseq/physeq_stramenopiles.rds") %>%
-  subset_samples(envplot %in% names(envplot_colors)) %>%
+  readRDS("data/phyloseq/physeq_stramenopiles.rds") |>
+  subset_samples(envplot %in% names(envplot_colors)) |>
   remove_empty_taxa()
 ```
 
@@ -29,8 +29,8 @@ physeq_stramenopiles <-
 
 ```{r}
 metadata <-
-  sample_data(physeq_nonochrophyta) %>%
-  as_tibble() %>%
+  sample_data(physeq_nonochrophyta) |>
+  as_tibble() |>
   mutate(envplot = fct_infreq(envplot))
 
 world_data <- map_data("world")
@@ -52,7 +52,7 @@ world_map <-
 p_map <-
   world_map +
   geom_point(
-    data = metadata %>%
+    data = metadata |>
       factor_envplot(),
     aes(
       x = longitude,
@@ -84,9 +84,9 @@ p_map <-
 
 ```{r}
 p_envplot_samples <-
-  metadata %>%
-  group_by(envplot) %>%
-  tally() %>%
+  metadata |>
+  group_by(envplot) |>
+  tally() |>
   ggplot(aes(x = n, y = fct_rev(envplot))) +
   geom_col(aes(fill = envplot)) +
   guides(fill = "none") +
@@ -106,30 +106,30 @@ p_envplot_samples <-
 
 ```{r}
 stramenopiles_df <-
-  physeq_stramenopiles %>%
-  subset_samples(!envplot %in% c("marine_ice", "land_water")) %>%
-  tax_glom("taxogroup1") %>%
-  counts_to_percent(total_col = "nreads") %>%
-  psmelt() %>%
-  as_tibble() %>%
-  select(-OTU) %>%
+  physeq_stramenopiles |>
+  subset_samples(!envplot %in% c("marine_ice", "land_water")) |>
+  tax_glom("taxogroup1") |>
+  counts_to_percent(total_col = "nreads") |>
+  psmelt() |>
+  as_tibble() |>
+  select(-OTU) |>
   mutate(
     group = if_else(taxogroup1 != "Ochrophyta", "non-Ochrophyta", taxogroup1),
     group = factor(group, levels = c("Ochrophyta", "non-Ochrophyta"))
-  ) %>%
-  group_by(Sample, envplot, group, nreads) %>%
-  summarise(Abundance = sum(Abundance)) %>%
+  ) |>
+  group_by(Sample, envplot, group, nreads) |>
+  summarise(Abundance = sum(Abundance)) |>
   factor_envplot()
 
 min_perc <-
-  stramenopiles_df %>%
-  arrange(Abundance) %>%
-  filter(Abundance != 0) %>%
-  pull(Abundance) %>%
+  stramenopiles_df |>
+  arrange(Abundance) |>
+  filter(Abundance != 0) |>
+  pull(Abundance) |>
   head(n = 1)
 
 p_stramenopiles_vs_protists <-
-  stramenopiles_df %>%
+  stramenopiles_df |>
   ggplot(aes(x = envplot, y = Abundance + min_perc)) +
   geom_jitter(aes(color = envplot), width = 0.2, height = 0, alpha = 0.4) +
   geom_boxplot(aes(fill = envplot), alpha = 0.5, outlier.shape = NA) +
@@ -169,57 +169,66 @@ p_stramenopiles_vs_protists <-
 
 ### D
 
-Export a matrix to perform NMDS analysis in cluster and import results. 
+Export a matrix to perform NMDS analysis in cluster and import results. Export envplot metadata to perform PERMANOVA.
 
 ```{r}
-# df_vegan <-
-#   physeq_stramenopiles %>%
-#   otu_table() %>%
-#   as_tibble() %>%
-#   vegan_formatter(row_names = '.otu',sample_col = '.sample',abun_col = '.abundance')
-#
-# saveRDS(df_vegan, 'data/vegan/matrix_eukbank_stramenopiles.rds')
+df_vegan <-
+  physeq_stramenopiles |>
+  otu_table() |>
+  as_tibble() |>
+  vegan_formatter(row_names = '.otu',sample_col = '.sample',abun_col = '.abundance')
+
+saveRDS(df_vegan, 'matrix_eukbank_stramenopiles.rds')
+
+envplot_matrix <- 
+  as.matrix(sample_data(physeq_stramenopiles)[,'envplot'])
+
+saveRDS(envplot_matrix, 'metadata_envplot.rds')
 ```
 
 Script in cluster
 
 ```{r}
 # library(vegan)
-#
+# 
 # df_vegan <- readRDS('matrix_eukbank_stramenopiles.rds')
-#
+# envplot_matrix <- readRDS('metadata_envplot.rds')
+# 
 # avg_bc_dist <- avgdist(df_vegan, sample = 10000, iterations = 100, dmethod = 'bray')
 # saveRDS(avg_bc_dist, 'bc_dist_str_min10k.rds')
-#
-# nmds <- metaMDS(avg_bc_dist)
+# 
+# nmds <- metaMDS(avg_bc_dist, k = 3, try = 100)
 # saveRDS(nmds, 'nmds_str_min10k.rds')
+# 
+# permanova <- 
+#   adonis2(formula = avg_bc_dist ~ envplot_matrix[labels(avg_bc_dist),], permutations = 999)
+# saveRDS(permanova, 'permanova_str_min10k.rds')
 ```
 
 Import results
 
 ```{r}
 nmds <-
-  readRDS("data/vegan/nmds_str_min10k.rds")
+  readRDS("data/vegan/nmds_str_min10k_k3_100iter.rds")
 ```
 
 Do plot
 
 ```{r}
 metadata_str <-
-  sample_data(physeq_stramenopiles) %>%
-  as_tibble() %>%
+  sample_data(physeq_stramenopiles) |>
+  as_tibble() |>
   mutate(envplot = fct_infreq(envplot))
 
 nmds_df <-
-  vegan::scores(nmds) %>%
-  as_tibble(rownames = ".sample") %>%
-  left_join(metadata_str) %>%
-  factor_envplot() %>%
+  vegan::scores(nmds) |>
+  as_tibble(rownames = ".sample") |>
+  left_join(metadata_str) |>
+  factor_envplot() |>
   filter(!is.na(envplot))
 
 p_nmds <-
-  nmds_df %>%
-  filter(between(NMDS1, -1e-3, 2.5e-4)) %>% # remove outliers
+  nmds_df |>
   ggplot(aes(x = NMDS1, y = NMDS2)) +
   geom_point(aes(color = envplot), alpha = 0.7) +
   scale_color_manual(
@@ -228,11 +237,9 @@ p_nmds <-
     name = "",
     labels = c("Marine water", "Marine sediment", "Freshwater", "Freshwater sediment", "Soil")
   ) +
-  annotate(geom = "text", x = -.5e-4, y = 3e-4, label = paste0("Stress: ", round(nmds$stress, 3))) +
+  annotate(geom = "text", x = -.5, y = .2, label = paste0("Stress: ", round(nmds$stress, 3))) +
   theme(
     legend.position = "bottom",
-    axis.text = element_blank(),
-    axis.ticks = element_blank(),
     panel.background = element_rect(fill = "gray95", color = NA)
   ) +
   guides(color = "none")
@@ -244,42 +251,42 @@ Main groups abundance relative to all protists.
 
 ```{r}
 taxogroup2_df <-
-  physeq_nonochrophyta %>%
-  remove_empty_taxa() %>%
-  counts_to_percent(total_col = "nreads") %>%
-  tax_glom_custom("taxogroup2") %>%
-  psmelt() %>%
-  as_tibble() %>%
-  select(-OTU) %>%
+  physeq_nonochrophyta |>
+  remove_empty_taxa() |>
+  counts_to_percent(total_col = "nreads") |>
+  tax_glom_custom("taxogroup2") |>
+  psmelt() |>
+  as_tibble() |>
+  select(-OTU) |>
   mutate(group = if_else(str_detect(taxogroup2, "MAST|NMS"), "MAST", taxogroup2))
 
 main_groups_selection <-
-  taxogroup2_df %>%
-  group_by(group, Sample) %>%
-  summarise(Abundance = sum(Abundance)) %>%
-  summarise(mean_abun = mean(Abundance)) %>%
-  slice_max(mean_abun, n = 6) %>%
-  arrange(-mean_abun) %>%
-  pull(group) %>%
+  taxogroup2_df |>
+  group_by(group, Sample) |>
+  summarise(Abundance = sum(Abundance)) |>
+  summarise(mean_abun = mean(Abundance)) |>
+  slice_max(mean_abun, n = 6) |>
+  arrange(-mean_abun) |>
+  pull(group) |>
   unique()
 
 main_groups_df <-
-  taxogroup2_df %>%
-  group_by(Sample, envplot, group) %>%
-  summarise(Abundance = sum(Abundance)) %>%
-  filter(group %in% main_groups_selection) %>%
-  mutate(group = factor(group, levels = main_groups_selection)) %>%
+  taxogroup2_df |>
+  group_by(Sample, envplot, group) |>
+  summarise(Abundance = sum(Abundance)) |>
+  filter(group %in% main_groups_selection) |>
+  mutate(group = factor(group, levels = main_groups_selection)) |>
   factor_envplot()
 
 min_perc <-
-  main_groups_df %>%
-  arrange(Abundance) %>%
-  filter(Abundance != 0) %>%
-  pull(Abundance) %>%
+  main_groups_df |>
+  arrange(Abundance) |>
+  filter(Abundance != 0) |>
+  pull(Abundance) |>
   head(n = 1)
 
 p_main_groups_facet_envplot <-
-  main_groups_df %>%
+  main_groups_df |>
   ggplot(aes(x = envplot, y = Abundance + min_perc)) +
   geom_jitter(aes(color = envplot), width = 0.2, height = 0, alpha = 0.4) +
   geom_boxplot(aes(fill = envplot), alpha = 0.5, outlier.shape = NA) +
@@ -345,7 +352,7 @@ fig2 <-
 ggsave("figure2.pdf", height = 12.5, width = 8)
 ```
 
-## Table S1
+## Table S2
 
 ```{r}
 final_envplot_names <-
@@ -380,7 +387,77 @@ tableS1 <-
 write_tsv(tableS1, "tableS1.tsv")
 ```
 
-## Figure S7
+## Table S3
+
+### A
+
+```{r}
+dunn_test_stramenopiles_summary <-
+  stramenopiles_df |>
+  mutate(
+    group = paste(str_remove(group, "-"), envplot, sep = "/"),
+    group = factor(group,
+      levels = paste(c(rep("Ochrophyta", 5), rep("nonOchrophyta", 5)), names(envplot_colors),
+        sep = "/"
+      )
+    )
+  ) |>
+  dunn_test(value_col = "Abundance", group_col = "group",p_value = 0.01) |>
+  separate(group, into = c("Group", "Habitat"), sep = "/") |>
+  mutate(
+    Habitat = str_to_sentence(str_replace(Habitat, "_", " ")),
+    Habitat = factor(Habitat, levels = habitats)
+  ) |>
+  arrange(Group, Habitat)
+
+write_tsv(dunn_test_stramenopiles_summary, "tableS3_A.tsv")
+```
+
+### B
+
+In this case we cannot perform an overall analysis because some groups have few data points.
+
+```{r}
+dunn_test_main_groups <-
+  main_groups_selection |>
+  set_names() |>
+  purrr::map(~ main_groups_df |>
+    filter(group == .x) |>
+    dunn_test(value_col = "Abundance", group_col = "envplot") |>
+    mutate(Habitat = str_to_sentence(str_replace(group, "_", " ")), .before = group) |>
+    select(-group)) |>
+  bind_rows(.id = "Group")
+
+write_tsv(dunn_test_main_groups, "tableS3_B1.tsv")
+```
+
+### C
+
+```{r}
+dunn_test_main_groups_by_habitat <-
+  names(envplot_colors) |>
+  set_names() |>
+  purrr::map(~ main_groups_df |>
+    filter(envplot == .x) |>
+    dunn_test(value_col = "Abundance", group_col = "group")) |>
+  bind_rows(.id = "Habitat") |> 
+  mutate(Habitat = str_to_sentence(str_replace(Habitat, "_", " ")), .before = group)
+
+write_tsv(dunn_test_main_groups_by_habitat, "tableS3_B2.tsv")
+```
+
+## Table S4
+
+```{r}
+permanova <- 
+  readRDS('data/vegan/permanova_str_min10k.rds')
+
+sink(file = 'tableS4.tsv')
+permanova
+sink(file = NULL)
+```
+
+## Figure S8
 
 ```{r}
 p_mast_histogram <-
@@ -413,8 +490,8 @@ p_mast_histogram <-
 
 
 total_samples <-
-  metadata %>%
-  group_by(envplot) %>%
+  metadata |>
+  group_by(envplot) |>
   tally()
 
 p_mast_histogram_occurrence <-
@@ -461,50 +538,50 @@ Files are already in `data/summaries`. Below is the code to create them.
 
 ```{r}
 # samples_per_envplot <-
-#   sample_data(physeq_nonochrophyta) %>%
-#   pull(envplot) %>%
-#   table() %>%
-#   as_tibble() %>%
+#   sample_data(physeq_nonochrophyta) |>
+#   pull(envplot) |>
+#   table() |>
+#   as_tibble() |>
 #   select(envplot = 1, total_samples = n)
 #
 # tax_asvs <-
-#   tax_table(physeq_nonochrophyta) %>%
+#   tax_table(physeq_nonochrophyta) |>
 #   as_tibble()
 #
 # asvs_summary_zeros <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   group_by(OTU, envplot) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   group_by(OTU, envplot) |>
 #   summarise(
 #     nsamples = sum(Abundance > 0),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   factor_envplot() %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   factor_envplot() |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary_zeros, "data/aux_files/summary_asvs_and_envplot_withzeros.rds")
 #
 # asvs_summary <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   group_by(OTU, envplot) %>%
-#   filter(Abundance > 0) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   group_by(OTU, envplot) |>
+#   filter(Abundance > 0) |>
 #   summarise(
 #     nsamples = n(),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   factor_envplot() %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   factor_envplot() |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary, "data/aux_files/summary_asvs_and_envplot.rds")
 #
@@ -512,14 +589,14 @@ Files are already in `data/summaries`. Below is the code to create them.
 #   readRDS("data/aux_files/summary_asvs_and_envplot.rds")
 #
 # asvs_per_envplot_taxogroup2 <-
-#   asvs_summary %>%
-#   group_by(envplot, taxogroup2) %>%
+#   asvs_summary |>
+#   group_by(envplot, taxogroup2) |>
 #   tally()
 #
 # asvs_per_envplot_taxogroup3 <-
-#   asvs_summary %>%
-#   filter(!is.na(taxogroup3)) %>%
-#   group_by(envplot, taxogroup3) %>%
+#   asvs_summary |>
+#   filter(!is.na(taxogroup3)) |>
+#   group_by(envplot, taxogroup3) |>
 #   tally()
 #
 # saveRDS(asvs_per_envplot_taxogroup2, "data/aux_files/asvs_per_envplot_taxogroup2.rds")
@@ -528,9 +605,9 @@ Files are already in `data/summaries`. Below is the code to create them.
 # # export asvs summary
 #
 # asvs_summary_export <-
-#   asvs_summary %>%
-#   arrange(envplot) %>%
-#   select(-nsamples, -total_samples) %>%
+#   asvs_summary |>
+#   arrange(envplot) |>
+#   select(-nsamples, -total_samples) |>
 #   pivot_wider(names_from = envplot, values_from = c(mean_abun, occ_perc))
 #
 # write_tsv(asvs_summary_export, "data/aux_files/asvs_summary_export.txt")
@@ -538,94 +615,94 @@ Files are already in `data/summaries`. Below is the code to create them.
 # # asvs summary with marine merged
 #
 # asvs_summary_mergedmarine <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   mutate(envplot = if_else(str_detect(envplot, "marine"), str_remove(envplot, "_.*"), envplot)) %>%
-#   group_by(OTU, envplot) %>%
-#   filter(Abundance > 0) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   mutate(envplot = if_else(str_detect(envplot, "marine"), str_remove(envplot, "_.*"), envplot)) |>
+#   group_by(OTU, envplot) |>
+#   filter(Abundance > 0) |>
 #   summarise(
 #     nsamples = n(),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot %>%
-#     mutate(envplot = if_else(str_detect(envplot, "marine"), str_remove(envplot, "_.*"), envplot)) %>%
-#     group_by(envplot) %>%
-#     summarise(total_samples = sum(total_samples))) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   mutate(envplot = factor(envplot, levels = c("marine", "freshwater", "freshwater_sediment", "soil"))) %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot |>
+#     mutate(envplot = if_else(str_detect(envplot, "marine"), str_remove(envplot, "_.*"), envplot)) |>
+#     group_by(envplot) |>
+#     summarise(total_samples = sum(total_samples))) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   mutate(envplot = factor(envplot, levels = c("marine", "freshwater", "freshwater_sediment", "soil"))) |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary_mergedmarine, "data/aux_files/summary_asvs_and_envplot_merged-marine.rds")
 #
 # asvs_summary_marinecontinental <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) %>%
-#   group_by(OTU, envplot) %>%
-#   filter(Abundance > 0) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) |>
+#   group_by(OTU, envplot) |>
+#   filter(Abundance > 0) |>
 #   summarise(
 #     nsamples = n(),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot %>%
-#     mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) %>%
-#     group_by(envplot) %>%
-#     summarise(total_samples = sum(total_samples))) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   mutate(envplot = factor(envplot, levels = c("marine", "continental"))) %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot |>
+#     mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) |>
+#     group_by(envplot) |>
+#     summarise(total_samples = sum(total_samples))) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   mutate(envplot = factor(envplot, levels = c("marine", "continental"))) |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary_marinecontinental, "data/aux_files/summary_asvs_and_envplot_marine-continental.rds")
 #
 #
 # asvs_summary_marinecontinental_zeros <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) %>%
-#   group_by(OTU, envplot) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) |>
+#   group_by(OTU, envplot) |>
 #   summarise(
 #     nsamples = n(),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot %>%
-#     mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) %>%
-#     group_by(envplot) %>%
-#     summarise(total_samples = sum(total_samples))) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   mutate(envplot = factor(envplot, levels = c("marine", "continental"))) %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot |>
+#     mutate(envplot = if_else(str_detect(envplot, "marine"), "marine", "continental")) |>
+#     group_by(envplot) |>
+#     summarise(total_samples = sum(total_samples))) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   mutate(envplot = factor(envplot, levels = c("marine", "continental"))) |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary_marinecontinental_zeros, "data/aux_files/summary_asvs_and_envplot_marine-continental_withzeros.rds")
 #
 # asvs_summary_mergedcontinental <-
-#   physeq_nonochrophyta %>%
-#   counts_to_percent(total_col = "nreads") %>%
-#   psmelt() %>%
-#   as_tibble() %>%
-#   mutate(envplot = if_else(str_detect(envplot, "marine"), envplot, "continental")) %>%
-#   group_by(OTU, envplot) %>%
-#   filter(Abundance > 0) %>%
+#   physeq_nonochrophyta |>
+#   counts_to_percent(total_col = "nreads") |>
+#   psmelt() |>
+#   as_tibble() |>
+#   mutate(envplot = if_else(str_detect(envplot, "marine"), envplot, "continental")) |>
+#   group_by(OTU, envplot) |>
+#   filter(Abundance > 0) |>
 #   summarise(
 #     nsamples = n(),
 #     mean_abun = mean(Abundance)
-#   ) %>%
-#   left_join(samples_per_envplot %>%
-#     mutate(envplot = if_else(str_detect(envplot, "marine"), envplot, "continental")) %>%
-#     group_by(envplot) %>%
-#     summarise(total_samples = sum(total_samples))) %>%
-#   mutate(occ_perc = 100 * nsamples / total_samples) %>%
-#   mutate(envplot = factor(envplot, levels = c("marine_water", "marine_sediment", "continental"))) %>%
-#   dplyr::rename(amplicon = OTU) %>%
-#   left_join(tax_asvs %>% select(amplicon = .otu, contains("taxogroup")))
+#   ) |>
+#   left_join(samples_per_envplot |>
+#     mutate(envplot = if_else(str_detect(envplot, "marine"), envplot, "continental")) |>
+#     group_by(envplot) |>
+#     summarise(total_samples = sum(total_samples))) |>
+#   mutate(occ_perc = 100 * nsamples / total_samples) |>
+#   mutate(envplot = factor(envplot, levels = c("marine_water", "marine_sediment", "continental"))) |>
+#   dplyr::rename(amplicon = OTU) |>
+#   left_join(tax_asvs |> select(amplicon = .otu, contains("taxogroup")))
 #
 # saveRDS(asvs_summary_mergedcontinental, "data/aux_files/summary_asvs_and_envplot_merged-continental.rds")
 ```

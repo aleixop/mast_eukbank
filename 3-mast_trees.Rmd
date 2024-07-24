@@ -15,16 +15,16 @@ source("aux_functions.R")
 ```{r}
 mast_physeq <- 
   readRDS('data/phyloseq/physeq_nonochrophyta.rds') |> 
-  counts_to_percent(total_col = 'nreads') %>%
-  subset_taxa(str_detect(taxogroup2, 'MAST')) %>% 
+  counts_to_percent(total_col = 'nreads') |>
+  subset_taxa(str_detect(taxogroup2, 'MAST')) |> 
   remove_empty_taxa()
 
 groups_with_tax3 <- 
-  tax_table(mast_physeq) %>% 
-  as_tibble() %>% 
-  group_by(taxogroup2) %>% 
-  filter(sum(is.na(taxogroup3)) != n()) %>% # take groups that have some tax3 defined
-  select(taxogroup2) %>% 
+  tax_table(mast_physeq) |> 
+  as_tibble() |> 
+  group_by(taxogroup2) |> 
+  filter(sum(is.na(taxogroup3)) != n()) |> # take groups that have some tax3 defined
+  select(taxogroup2) |> 
   unique() |> 
   mutate(num = as.integer(str_remove(taxogroup2, '.*-'))) |> 
   arrange(num) |> 

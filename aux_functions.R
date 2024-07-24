@@ -1,7 +1,8 @@
+set.seed(300524)
+
 # aux function for EukBank analysis
 
 library(Biostrings)
-library(tidyverse)
 library(speedyseq)
 library(patchwork)
 library(ggtext)
@@ -10,6 +11,10 @@ library(viridis)
 library(ggtree)
 library(treeio)
 library(phytools)
+library(FSA)
+library(rcompanion)
+library(tidyverse)
+library(vegan)
 
 theme_set(theme_minimal(base_size = 12))
 
@@ -24,6 +29,9 @@ envplot_colors <-
       "freshwater", "freshwater_sediment", "soil"
     )
   )
+
+habitats <-
+  str_to_sentence(str_replace(names(envplot_colors), "_", " "))
 
 envplot_plotter <- function(df, facet, x = "envplot", y = ".abundance", scales_ = "free") {
   plot <-
@@ -144,7 +152,7 @@ shared_asvs_plotter <- function(taxa) {
       taxogroup3 = rep(taxa, 5)
     ) %>%
       factor_envplot())
-  
+
   p_abun <-
     ggplot() +
     geom_jitter(
@@ -182,7 +190,7 @@ shared_asvs_plotter <- function(taxa) {
       axis.ticks.x = element_blank(),
       axis.text.y = element_markdown()
     )
-  
+
   p_occ <-
     ggplot() +
     geom_jitter(
@@ -216,93 +224,152 @@ shared_asvs_plotter <- function(taxa) {
     theme_bw() +
     labs(x = "", y = "Occurrence (%)") +
     theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10))
-  
+
   p_abun / p_occ
 }
 
-plot_mast_tree <- function(group, offset = 0.1){
-  
-  tree <- 
+plot_mast_tree <- function(group, offset = 0.1) {
+  tree <-
     trees[[group]]
-  
-  tree_names <-  
-    tibble(name = tree$tip.label) |> 
-    mutate(clade = if_else(str_detect(name, '-outgroup'), 'Outgroup', str_remove(name, '.*_')),
-           clade = if_else(str_detect(clade, '[0-9]$'), NA_character_, clade)) |> # remove references without subclade
+
+  tree_names <-
+    tibble(name = tree$tip.label) |>
+    mutate(
+      clade = if_else(str_detect(name, "-outgroup"), "Outgroup", str_remove(name, ".*_")),
+      clade = if_else(str_detect(clade, "[0-9]$"), NA_character_, clade)
+    ) |> # remove references without subclade
     filter(!is.na(clade))
-  
-  clade_node_numbers <- 
-    tree_names |> 
-    group_by(clade) |> 
+
+  clade_node_numbers <-
+    tree_names |>
+    group_by(clade) |>
     summarise(node_num = MRCA(tree, name))
-  
-  outgroup_num <- 
-    clade_node_numbers |> 
-    filter(clade == 'Outgroup') |> 
+
+  outgroup_num <-
+    clade_node_numbers |>
+    filter(clade == "Outgroup") |>
     pull(node_num)
-  
-  len_root <- 
-    tree$edge.length[tree$edge[, 2] == outgroup_num]/2
-  
-  rooted_tree <- 
+
+  len_root <-
+    tree$edge.length[tree$edge[, 2] == outgroup_num] / 2
+
+  rooted_tree <-
     reroot(tree, node.number = outgroup_num, position = len_root)
-  
+
   node_num_all <- # first node number of tree without outgroup
-    MRCA(rooted_tree, tree_names |> filter(clade != 'Outgroup') |> pull(name))
-  
-  clade_node_numbers_rooted <- 
-    tree_names |> 
-    group_by(clade) |> 
-    summarise(node_num = MRCA(rooted_tree, name)) |> 
+    MRCA(rooted_tree, tree_names |> filter(clade != "Outgroup") |> pull(name))
+
+  clade_node_numbers_rooted <-
+    tree_names |>
+    group_by(clade) |>
+    summarise(node_num = MRCA(rooted_tree, name)) |>
     filter(node_num != node_num_all)
-  
+
   bootstrap_values_filtered <-
     as_tibble(rooted_tree) |>
     filter(!label %in% rooted_tree$tip.label) |>
-    mutate(label = if_else(label == 'Root', '', label),
-           shalrt = as.numeric(str_remove(label, '\\/.*')),
-           ufboot = as.numeric(str_remove(label, '.*\\/')),
-           # label = case_when(node %in% clade_node_numbers_rooted$node_num ~ label,
-           #                   shalrt >= 80 & ufboot >= 95 ~ label,
-           #                   TRUE ~ '')
-    ) 
-  
+    mutate(
+      label = if_else(label == "Root", "", label),
+      shalrt = as.numeric(str_remove(label, "\\/.*")),
+      ufboot = as.numeric(str_remove(label, ".*\\/")),
+      # label = case_when(node %in% clade_node_numbers_rooted$node_num ~ label,
+      #                   shalrt >= 80 & ufboot >= 95 ~ label,
+      #                   TRUE ~ '')
+    )
+
   rooted_tree$node.label <- bootstrap_values_filtered$label
-  
-  p_tree <- 
-    ggtree(rooted_tree) + 
+
+  p_tree <-
+    ggtree(rooted_tree) +
     # geom_text(aes(label=node), hjust=-.3) +
     geom_tiplab(size = 2.5) +
     geom_nodelab(size = 3) +
     geom_treescale()
-  
-  for (cla in clade_node_numbers_rooted |> filter(clade != 'Outgroup') |> pull(clade)){
-    
-    num_node <- 
-      clade_node_numbers_rooted |> 
-      filter(clade == cla) |> 
+
+  for (cla in clade_node_numbers_rooted |>
+    filter(clade != "Outgroup") |>
+    pull(clade)) {
+    num_node <-
+      clade_node_numbers_rooted |>
+      filter(clade == cla) |>
       pull(node_num)
-    
-    p_tree <- 
+
+    p_tree <-
       p_tree +
       geom_cladelab(node = num_node, label = cla, align = T, offset = offset, size = 4)
-    
   }
-  
+
   return(p_tree)
 }
 
-vegan_formatter <- function(df, row_names, sample_col = 'Sample', abun_col = 'Abundance', fill = 0){
-  
-  df_wide <- 
-    df %>% 
-    dplyr::select(sample_col, abun_col, row_names) %>% 
-    pivot_wider(names_from = sample_col,
-                values_from = abun_col, 
-                values_fill = fill) %>% 
-    column_to_rownames(row_names) %>% 
+vegan_formatter <- function(df, row_names, sample_col = "Sample", abun_col = "Abundance", fill = 0) {
+  df_wide <-
+    df %>%
+    dplyr::select(sample_col, abun_col, row_names) %>%
+    pivot_wider(
+      names_from = sample_col,
+      values_from = abun_col,
+      values_fill = fill
+    ) %>%
+    column_to_rownames(row_names) %>%
     t()
-  
+
   return(df_wide)
-  
+}
+
+dunn_test <- function(data, value_col, group_col, p_value = 0.05) {
+  levels <- levels(data[[group_col]])
+
+  df <-
+    data |>
+    ungroup() |>
+    select(
+      value = all_of(value_col),
+      group = all_of(group_col)
+    ) |>
+    arrange(group) |>
+    rowwise() |>
+    mutate(group = factor(paste(letters[which(levels == group)], group, sep = "."),
+      levels = paste(letters[1:10], levels, sep = ".")
+    ))
+
+  df_summary <-
+    df |>
+    group_by(group) |>
+    summarise(data_summary = list(summary(value))) |>
+    unnest_wider(data_summary) |> 
+    mutate(across(where(is.table), as.numeric))
+
+  dunn_result <-
+    dunnTest(value ~ group, data = df)
+
+  dunn_summary <-
+    dunn_result$res
+
+  letters_df <-
+    cldList(
+      formula = P.adj ~ Comparison,
+      data = dunn_summary,
+      threshold = p_value
+    ) |>
+    as_tibble() |>
+    select(-3)
+
+  result <-
+    letters_df |>
+    select(
+      group = 1,
+      CLD = 2
+    ) |>
+    left_join(df_summary) |>
+    mutate(group = str_remove(group, "^[a-z]\\."))
+
+  return(result)
+}
+
+tidy_specaccum <- function(x) {
+  data.frame(
+    site = x$sites,
+    richness = x$richness,
+    sd = x$sd)
 }
