@@ -871,5 +871,13 @@ for (envplot in names(envplot_colors)){
              lwd = 3)
 }
 dev.off()
+
+# calculate number of sites in marine water to reach 80% of richness (for discussion)
+
+tibble(sites = specaccum_objects$marine_water$sites, 
+       richness = specaccum_objects$marine_water$richness) |> 
+  mutate(perc_richness = 100*richness/max(richness)) |> 
+  filter(perc_richness < 80) |> 
+  nrow() # 631 samples
 ```
 
