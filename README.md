@@ -3,7 +3,8 @@
 This repository contains code and data included in:
 
 --------
-Obiol, A., del Campo, J., de Vargas, C., Mahé, F., and Massana R. How marine are Marine Stramenopiles (MAST)? A cross-system evaluation 
+Aleix Obiol, Javier del Campo, Colomban de Vargas, Frédéric Mahé, Ramon Massana, How marine are Marine Stramenopiles (MAST)? A cross-system evaluation, *FEMS Microbiology Ecology*, Volume 100, Issue 11, November 2024, fiae130, [https://doi.org/10.1093/femsec/fiae130](https://doi.org/10.1093/femsec/fiae130)
+
 
 --------
 
